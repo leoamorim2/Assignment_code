@@ -1,14 +1,13 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox
 
 
 def create_db():
-    
-    conn = sqlite3.connect('student_grades.db')  
+    conn = sqlite3.connect('student_grades.db')
     cursor = conn.cursor()
-
-    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS students (
         student_id INTEGER PRIMARY KEY,
@@ -19,126 +18,116 @@ def create_db():
         attendance REAL
     )
     ''')
-
-    conn.commit()  
+    conn.commit()
     conn.close()
 
 
 def load_data(file_path):
-    
     try:
         data = pd.read_csv(file_path)
         return data
     except FileNotFoundError:
-        print("Error: File not found. Please check the path and try again.")
+        messagebox.showerror("Error", "File not found. Please check the path and try again.")
         return None
     except pd.errors.EmptyDataError:
-        print("Error: File is empty.")
+        messagebox.showerror("Error", "File is empty.")
         return None
     except Exception as e:
-        print(f"Error loading the file: {e}")
+        messagebox.showerror("Error", f"Error loading the file: {e}")
         return None
 
 
 def calculate_average(column):
-    
-    if column.empty:
-        return 0
-    return column.mean()
+    return column.mean() if not column.empty else 0
 
 
 def count_grades(data):
-    
     fails = len(data[data['grade'] < 40])
     passes = len(data[data['grade'] >= 40])
-
     grades_distribution = {
         'A': len(data[data['grade'] >= 70]),
         'B': len(data[(data['grade'] >= 50) & (data['grade'] < 70)]),
         'C': len(data[(data['grade'] >= 40) & (data['grade'] < 50)])
     }
-
     return fails, passes, grades_distribution
 
 
-def display_results(avg_grade, avg_attendance, fails, passes, grades_distribution):
-    
-    print("Mandatory Results:")
-    print(f"Average grade: {avg_grade:.2f}")
-    print(f"Average attendance: {avg_attendance:.2f}%")
-    print(f"Number of fails: {fails}")
-    print(f"Number of passes: {passes}")
-    print("Grade distribution:")
+def display_results():
+    avg_grade = calculate_average(data['grade'])
+    avg_attendance = calculate_average(data['attendance'])
+    fails, passes, grades_distribution = count_grades(data)
+
+    for row in tree.get_children():
+        tree.delete(row)
+
+    tree.insert("", "end", values=("Average Grade", f"{avg_grade:.2f}"))
+    tree.insert("", "end", values=("Average Attendance", f"{avg_attendance:.2f}%"))
+    tree.insert("", "end", values=("Fails", fails))
+    tree.insert("", "end", values=("Passes", passes))
+
     for grade, count in grades_distribution.items():
-        print(f"  {grade}: {count}")
+        tree.insert("", "end", values=(f"Grade {grade}", count))
 
 
-def search_student(data):
-    
-    search_term = input("Enter the student's name or ID: ").strip()
+def search_student():
+    search_term = entry_search.get().strip()
     if search_term.isdigit():
         result = data[data['student_id'] == int(search_term)]
     else:
         result = data[(data['first_name'].str.contains(search_term, case=False, na=False)) |
                       (data['last_name'].str.contains(search_term, case=False, na=False))]
-
+    for row in search_tree.get_children():
+        search_tree.delete(row)
     if result.empty:
-        print("Student not found.")
+        search_tree.insert("", "end", values=("No results found", "", "", "", ""))
     else:
-        print("Search results:")
-        print(result)
+        for _, row in result.iterrows():
+            search_tree.insert("", "end", values=(
+            row['student_id'], row['first_name'], row['last_name'], row['country'], row['grade']))
 
 
-def plot_average_grade_by_country(data):
-    
+def plot_average_grade_by_country():
     avg_grade_by_country = data.groupby('country')['grade'].mean().sort_values()
     avg_grade_by_country.plot(kind='bar', figsize=(10, 6), color='skyblue')
     plt.title('Average Grades by Country')
     plt.xlabel('Country')
     plt.ylabel('Average Grade')
-    plt.xticks(rotation=45, fontsize=8, ha='right') 
+    plt.xticks(rotation=45, fontsize=8, ha='right')
     plt.tight_layout()
     plt.show()
 
 
-def main_menu():
-    
-    
-    create_db()
+file_path = "student_grades.csv"
+data = load_data(file_path)
+if data is None or data.empty:
+    exit()
 
-    file_path = "student_grades.csv"
-    data = load_data(file_path)
+root = tk.Tk()
+root.title("Student Grades Application")
 
-    data = load_data(file_path)
+frame = tk.Frame(root)
+frame.pack(pady=10)
 
-    if data is None or data.empty:
-        print("Error: No data available for processing.")
-        return
+tree = ttk.Treeview(frame, columns=("Metric", "Value"), show="headings")
+tree.heading("Metric", text="Metric")
+tree.heading("Value", text="Value")
+tree.pack()
 
-    while True:
-        print("\nMain Menu:")
-        print("1. Display mandatory results")
-        print("2. Search for student information")
-        print("3. Generate average grade by country chart")
-        print("4. Exit")
+tk.Button(root, text="Display Results", command=display_results).pack(pady=5)
 
-        choice = input("Choose an option: ").strip()
+frame_search = tk.Frame(root)
+frame_search.pack(pady=10)
 
-        if choice == '1':
-            avg_grade = calculate_average(data['grade'])
-            avg_attendance = calculate_average(data['attendance'])
-            fails, passes, grades_distribution = count_grades(data)
-            display_results(avg_grade, avg_attendance, fails, passes, grades_distribution)
-        elif choice == '2':
-            search_student(data)
-        elif choice == '3':
-            plot_average_grade_by_country(data)
-        elif choice == '4':
-            print("Exiting the programme. Goodbye!")
-            break
-        else:
-            print("Invalid option. Please try again.")
+tk.Label(frame_search, text="Search Student:").pack(side=tk.LEFT)
+entry_search = tk.Entry(frame_search)
+entry_search.pack(side=tk.LEFT, padx=5)
+tk.Button(frame_search, text="Search", command=search_student).pack(side=tk.LEFT)
 
+search_tree = ttk.Treeview(root, columns=("ID", "First Name", "Last Name", "Country", "Grade"), show="headings")
+for col in ["ID", "First Name", "Last Name", "Country", "Grade"]:
+    search_tree.heading(col, text=col)
+search_tree.pack()
 
-if __name__ == "__main__":
-    main_menu()
+tk.Button(root, text="Show Grade Chart", command=plot_average_grade_by_country).pack(pady=5)
+
+root.mainloop()
